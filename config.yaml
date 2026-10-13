@@ -1,0 +1,59 @@
+# Botond's Industrial Data Protocol Simulator - configuration
+#
+# Every protocol section is a LIST: add more entries to run more instances, each on its own port.
+# Each instance has one or more tag groups:
+#   name        tag name prefix (tags become <name>00000, <name>00001, ...)
+#   count       number of tags in the group
+#   data_type   float32 | float64 | int16 | uint16 | int32 | uint32 | bool
+#   generator   random | random_walk | sine | ramp | square | counter | constant
+#   min / max   value range
+#   period_s    period for sine / ramp / square (each tag gets a random phase)
+#   step        step size for random_walk / counter
+
+modbus:
+  - name: modbus1
+    enabled: true
+    host: 0.0.0.0
+    port: 5020                  # standard is 502
+    update_interval_ms: 500
+    word_order: big             # big = ABCD (high word first), little = CDAB
+    tags:
+      # area: holding_registers | input_registers | coils | discrete_inputs
+      # start_address is optional; groups are packed one after another (0-based)
+      - {name: HR_Float, count: 10000, data_type: float32, generator: random, min: 0, max: 100, area: holding_registers}
+      - {name: IR_Int, count: 5000, data_type: int16, generator: sine, min: -1000, max: 1000, period_s: 60, area: input_registers}
+      - {name: Coil, count: 1000, generator: square, period_s: 10, area: coils}
+
+opcua:
+  - name: opcua1
+    enabled: true
+    host: 0.0.0.0
+    port: 4840
+    update_interval_ms: 500
+    namespace: urn:botond:simulator
+    writable: false
+    folder_size: 1000           # large groups are split into sub-folders of this size
+    tags:
+      - {name: Random, count: 40000, data_type: float64, generator: random, min: 0, max: 100}
+
+mqtt_broker:                    # built-in broker; disable it to use an external one
+  - name: broker1
+    enabled: true
+    host: 0.0.0.0
+    port: 1883
+
+mqtt:
+  - name: mqtt1
+    enabled: true
+    broker_host: 127.0.0.1
+    broker_port: 1883
+    update_interval_ms: 1000
+    topic_prefix: sim/mqtt1
+    mode: per_tag               # per_tag = one topic per tag, batch = JSON object with batch_size tags
+    batch_size: 1000
+    payload_format: json        # json = {"value": .., "timestamp": ..}, plain = bare value (per_tag only)
+    qos: 0
+    retain: false
+    tags:
+      - {name: Temp, count: 1000, data_type: float32, generator: random_walk, min: 20, max: 80, step: 0.5}
+      - {name: Status, count: 100, data_type: bool, generator: square, period_s: 30}
