@@ -1,0 +1,7 @@
+﻿Botond's Industrial Data Protocol Simulator 0.2.0
+
+Run BotondsProtocolSimulator.exe, then open http://127.0.0.1:8088
+Settings are stored in config.yaml next to the exe.
+
+  BotondsProtocolSimulator.exe --port 9000 --host 0.0.0.0   (UI on another port / from the network)
+  BotondsProtocolSimulator.exe --headless                   (no UI, start all enabled instances)

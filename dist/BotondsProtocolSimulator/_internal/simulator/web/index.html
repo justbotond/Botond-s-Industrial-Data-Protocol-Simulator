@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Industrial Data Protocol Simulator</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230f766e'/><path d='M7 20h4l3-9 4 13 3-8h4' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M7 20h4l3-9 4 13 3-8h4" stroke="white" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div>
+      <div class="brand-title">Botond's Industrial Data Protocol Simulator</div>
+      <div class="brand-sub" id="hostinfo">&nbsp;</div>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <span class="dirty-flag" id="dirtyFlag" hidden>Unsaved changes</span>
+    <button class="btn" id="btnSave" title="Write the configuration to config.yaml">Save configuration</button>
+    <button class="btn btn-go" id="btnStartAll">Start all enabled</button>
+    <button class="btn btn-stop" id="btnStopAll">Stop all</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar" id="nav">
+    <a data-page="overview" class="nav-item">Overview</a>
+    <div class="nav-group">Protocols</div>
+    <a data-page="modbus" class="nav-item">Modbus TCP <span class="nav-count" data-count="modbus"></span></a>
+    <a data-page="opcua" class="nav-item">OPC UA <span class="nav-count" data-count="opcua"></span></a>
+    <a data-page="opcda" class="nav-item">OPC DA <span class="nav-count" data-count="opcda"></span></a>
+    <a data-page="mqtt" class="nav-item">MQTT <span class="nav-count" data-count="mqtt"></span></a>
+    <a data-page="bacnet" class="nav-item">BACnet/IP <span class="nav-count" data-count="bacnet"></span></a>
+    <div class="nav-group">Diagnostics</div>
+    <a data-page="logs" class="nav-item">Logs</a>
+  </nav>
+  <main id="main"></main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

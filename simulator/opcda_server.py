@@ -900,10 +900,13 @@ class OpcDaSimServer:
         self.scope = None
 
     def command_line(self) -> str:
-        exe = Path(sys.executable)
-        pyw = exe.with_name("pythonw.exe")
-        exe = pyw if pyw.exists() else exe
-        cmd = f'"{exe}" "{Path(__file__).resolve()}" --name "{self.name}"'
+        if getattr(sys, "frozen", False):  # packaged build: the .exe itself has a standalone mode
+            cmd = f'"{sys.executable}" --opcda-standalone --name "{self.name}"'
+        else:
+            exe = Path(sys.executable)
+            pyw = exe.with_name("pythonw.exe")
+            exe = pyw if pyw.exists() else exe
+            cmd = f'"{exe}" "{Path(__file__).resolve()}" --name "{self.name}"'
         if self.config_path:
             cmd += f' --config "{Path(self.config_path).resolve()}"'
         return cmd
@@ -956,7 +959,8 @@ def _standalone() -> None:
     import yaml
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True)
-    ap.add_argument("--config", default=str(Path(__file__).resolve().parent.parent / "config.yaml"))
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+    ap.add_argument("--config", default=str(base / "config.yaml"))
     ap.add_argument("-Embedding", "/Embedding", dest="embedding", action="store_true")
     args, _ = ap.parse_known_args()
     logging.basicConfig(level=logging.INFO, filename=str(Path(args.config).with_name("opcda_standalone.log")),
