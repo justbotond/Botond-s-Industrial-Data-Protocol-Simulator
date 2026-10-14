@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 tagmaps/
 opcda_standalone.log
+build/

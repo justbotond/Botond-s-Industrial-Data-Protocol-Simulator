@@ -18,7 +18,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from . import clients
+from . import __version__, clients
 from .bacnet_server import primary_ipv4
 from .runner import KINDS, START_ORDER, instance_kwargs, load_config, make, run_instance, save_config
 
@@ -237,7 +237,7 @@ async def index(request):
 async def meta(request):
     from .opcda_support import opcda_status
     return web.json_response({
-        "app": "Botond's Industrial Data Protocol Simulator",
+        "app": "Botond's Industrial Data Protocol Simulator", "version": __version__,
         "kinds": KINDS, "start_order": START_ORDER,
         "hostname": socket.gethostname(), "primary_ip": primary_ipv4(),
         "python": platform.python_version(), "platform": platform.platform(),

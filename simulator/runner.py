@@ -142,6 +142,7 @@ def run_instance(kind: str, kwargs: dict, export_dir: str | None = None, verbose
         root.addHandler(h)
     logging.getLogger("asyncua").setLevel(logging.ERROR)
     logging.getLogger("bacpypes3").setLevel(logging.ERROR)
+    logging.getLogger("comtypes").setLevel(logging.WARNING)
     name = kwargs.get("name", kind)
 
     if sys.platform == "win32" and kind == "bacnet":

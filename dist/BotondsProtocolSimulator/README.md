@@ -12,7 +12,19 @@ Simulates industrial data sources for testing historians, SCADA, IIoT gateways a
 
 Each protocol can have any number of instances. Each instance runs on its own port (or ProgID) and in **its own OS process**, so instances use separate CPU cores and don't slow each other down. An instance has one or more **tag groups**, each with a tag count, data type, value generator and update rate. One example: 40,000 random doubles every 500 ms on OPC UA.
 
-## Quick start
+![Overview with all protocols running](docs/screenshots/01-overview.png)
+
+## Run the Windows build (no Python needed)
+
+1. Unzip `BotondsProtocolSimulator-<version>-win64.zip`. You can build it yourself, see [Building](#building).
+2. Run `BotondsProtocolSimulator.exe`. A console window shows the log; closing it stops everything.
+3. Open **http://127.0.0.1:8088**.
+
+Settings are kept in `config.yaml` next to the exe. The same command-line options as below apply, e.g. `BotondsProtocolSimulator.exe --port 9000 --host 0.0.0.0` or `--headless`.
+
+The first time BACnet or a server bound to `0.0.0.0` starts, Windows Firewall may ask whether to allow the app. Allow it on private networks if other machines should reach it.
+
+## Run from source
 
 ```bash
 python -m venv .venv
@@ -35,6 +47,17 @@ python -m simulator --port 9000 --host 0.0.0.0     # UI on another port / reacha
 python -m simulator --headless                     # no UI: start every enabled instance in config.yaml
 python -m simulator --headless --export-tags tagmaps
 ```
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Modbus server configuration](docs/screenshots/02-modbus-servers.png) **Modbus server**: tag groups, address usage per table, live stats | ![Modbus test client](docs/screenshots/03-modbus-test-client.png) **Modbus test client**: raw registers and decoded float32 values |
+| ![OPC UA browser](docs/screenshots/04-opcua-browse.png) **OPC UA test client**: browsing a 40,000-tag server | ![MQTT test client](docs/screenshots/05-mqtt-test-client.png) **MQTT test client**: subscribed through the internal broker, ~1,100 msg/s |
+| ![BACnet test client](docs/screenshots/06-bacnet-test-client.png) **BACnet/IP test client**: reading present-values | ![OPC DA server](docs/screenshots/07-opcda-server.png) **OPC DA server** with the prerequisite check |
+| ![Modbus guide](docs/screenshots/08-modbus-guide.png) **Guide**: Modbus limits and sizing suggestions | ![Logs](docs/screenshots/09-logs.png) **Logs** from every process |
+
+The screenshots were taken with the packaged build on alternate ports. To regenerate them, start the simulator, press **Start all enabled**, then run `.venv\Scripts\python tools\screenshots.py --url http://127.0.0.1:8088` (needs Edge or Chrome).
 
 ## Tag groups
 
@@ -83,6 +106,24 @@ Protocol-specific fields:
 - If a client activates the ProgID while the instance is stopped, Windows starts it standalone from config.yaml. It exits 30 s after the last client leaves.
 - **Prerequisite:** the OPC Foundation *OPC Core Components Redistributable* matching this Python's bitness (64-bit). This PC currently has only the 32-bit components. Until the 64-bit ones are installed, clients reach the server but Windows can't pass the OPC interfaces between processes (E_NOINTERFACE). The UI shows this status on the OPC DA page.
 
+## Building
+
+The Windows build is a PyInstaller one-folder app: an exe plus an `_internal` folder, about 58 MB, or 20 MB zipped.
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt pyinstaller
+.\build.ps1
+```
+
+This produces:
+- `dist\BotondsProtocolSimulator\BotondsProtocolSimulator.exe`, with `config.yaml`, `README.md` and `START_HERE.txt` next to it
+- `dist\BotondsProtocolSimulator-<version>-win64.zip`
+
+The version comes from `simulator/__init__.py`. Build inputs are [simulator.spec](simulator.spec), [run_simulator.py](run_simulator.py) and [build.ps1](build.ps1).
+
+In the packaged app, each simulator instance runs as another copy of the same exe, so you'll see several `BotondsProtocolSimulator.exe` processes in Task Manager. They exit when the main window closes. The OPC DA auto-start registration points at the exe (`--opcda-standalone`).
+
 ## Layout
 
 ```
@@ -99,4 +140,7 @@ simulator/
   mqtt_publisher.py   MQTT data simulator
   bacnet_server.py    BACnet/IP device (bacpypes3)
   clients.py          Modbus / OPC UA / MQTT / BACnet test clients
+run_simulator.py      entry point of the packaged build
+simulator.spec        PyInstaller spec; build.ps1 builds and zips it
+tools/screenshots.py  regenerates docs/screenshots with headless Edge/Chrome
 ```

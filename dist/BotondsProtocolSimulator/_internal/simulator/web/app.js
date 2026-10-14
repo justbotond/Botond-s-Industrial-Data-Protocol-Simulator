@@ -87,7 +87,7 @@ const KIND = {
     ],
     tagCols: [...TAG_COMMON,
       { k: "area", label: "Area", type: "select", options: MB_AREAS, def: "holding_registers" },
-      { k: "start_address", label: "Start addr", type: "int", def: "", hint: "blank = auto", optional: true }],
+      { k: "start_address", label: "Start addr", type: "int", def: "", hint: "auto", optional: true }],
     make: name => ({ name, enabled: true, host: "0.0.0.0", port: freePort("modbus", 1502), update_interval_ms: 1000, word_order: "big",
       tags: [{ name: "HR_Float", count: 100, data_type: "float32", generator: "random", min: 0, max: 100, area: "holding_registers" }] }),
     endpoint: c => `modbus://${localHost(c.host)}:${c.port}`,
@@ -172,7 +172,7 @@ const KIND = {
       { k: "name", label: "Name prefix", type: "text", def: "AI" },
       { k: "count", label: "Count", type: "int", def: 50 },
       { k: "object_type", label: "Object type", type: "select", options: BAC_TYPES, def: "analog-input" },
-      { k: "start_instance", label: "First instance", type: "int", def: "", optional: true },
+      { k: "start_instance", label: "First instance", type: "int", def: "", hint: "auto", optional: true },
       ...TAG_COMMON.slice(3)],
     make: name => ({ name, enabled: true, ip_address: "auto", port: freePort("bacnet", 47808),
       device_instance: freeDeviceInstance(), update_interval_ms: 1000,
@@ -1001,15 +1001,17 @@ async function pollLogs() {
       S.logsSince = rows[rows.length - 1].id;
       S.logs.push(...rows); if (S.logs.length > 2000) S.logs.splice(0, S.logs.length - 2000);
       if (S.page === "logs") drawLogs();
-      for (const r of rows) if (r.level === "ERROR" && r.source !== "manager") toast(r.message.split("\n")[0], true);
+      // toast only new errors from the simulator's own loggers (not history on page load, not library internals)
+      if (S.logsPrimed) for (const r of rows) if (r.level === "ERROR" && r.source !== "manager" && !r.source.includes(".")) toast(r.message.split("\n")[0], true);
     }
   } catch { /* ignore */ }
+  S.logsPrimed = true;
 }
 
 async function boot() {
   [S.meta, S.cfg] = await Promise.all([api("GET", "/api/meta"), api("GET", "/api/config")]);
   for (const k of Object.keys(KIND)) S.cfg[k] = S.cfg[k] || [];
-  $("#hostinfo").textContent = `${S.meta.hostname} · ${S.meta.primary_ip} · Python ${S.meta.python} · ${S.meta.config_path}`;
+  $("#hostinfo").textContent = `v${S.meta.version} · ${S.meta.hostname} · ${S.meta.primary_ip} · Python ${S.meta.python} · ${S.meta.config_path}`;
   $("#nav").addEventListener("click", e => {
     const a = e.target.closest(".nav-item"); if (!a) return;
     S.page = a.dataset.page; location.hash = S.page; render();
