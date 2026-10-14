@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
 
 log = logging.getLogger("mqtt-broker")
 
@@ -55,14 +56,15 @@ class _Session:
         if self.alive:
             self.writer.write(bytes([ptype_flags]) + encode_length(len(body)) + body)
 
-    def publish(self, topic: str, payload: bytes, qos: int, retain: bool = False) -> None:
-        if self.writer.transport.get_write_buffer_size() > MAX_BUFFER:
-            return  # slow subscriber: drop instead of growing memory without bound
+    def publish(self, topic: str, payload: bytes, qos: int, retain: bool = False) -> bool:
+        if not self.alive or self.writer.transport.get_write_buffer_size() > MAX_BUFFER:
+            return False  # slow subscriber: drop instead of growing memory without bound
         body = mqtt_str(topic)
         if qos:
             body += struct.pack(">H", self.next_pid)
             self.next_pid = self.next_pid % 65535 + 1
         self.send((PUBLISH << 4) | (qos << 1) | int(retain), body + payload)
+        return True
 
 
 class MqttBroker:
@@ -70,12 +72,26 @@ class MqttBroker:
         self.host, self.port, self.name = host, port, name
         self.sessions: set[_Session] = set()
         self.retained: dict[str, tuple[bytes, int]] = {}
+        self.msgs_in = 0
+        self.msgs_out = 0
+        self.dropped = 0
+        self.started = time.time()
+        self.ready = asyncio.Event()
+
+    def stats(self) -> dict:
+        return {"clients": len(self.sessions), "messages_in": self.msgs_in, "messages_out": self.msgs_out,
+                "dropped": self.dropped, "retained_topics": len(self.retained),
+                "uptime_s": int(time.time() - self.started),
+                "client_list": [{"id": s.client_id, "subscriptions": sorted(s.subs)} for s in self.sessions][:50]}
 
     def _route(self, topic: str, payload: bytes, qos: int) -> None:
         for s in list(self.sessions):
             granted = max((q for f, q in s.subs.items() if topic_matches(f, topic)), default=None)
             if granted is not None:
-                s.publish(topic, payload, min(qos, granted))
+                if s.publish(topic, payload, min(qos, granted)):
+                    self.msgs_out += 1
+                else:
+                    self.dropped += 1
 
     async def _read_packet(self, reader: asyncio.StreamReader) -> tuple[int, int, bytes]:
         first = (await reader.readexactly(1))[0]
@@ -113,6 +129,7 @@ class MqttBroker:
                         pos += 2
                         s.send(PUBACK << 4, pid)  # QoS 2 is downgraded to 1
                     payload = body[pos:]
+                    self.msgs_in += 1
                     if retain:
                         if payload:
                             self.retained[topic] = (payload, min(qos, 1))
@@ -159,5 +176,6 @@ class MqttBroker:
     async def run(self) -> None:
         server = await asyncio.start_server(self._client, self.host, self.port)
         log.info("%s: MQTT broker listening on %s:%d", self.name, self.host, self.port)
+        self.ready.set()
         async with server:
             await server.serve_forever()

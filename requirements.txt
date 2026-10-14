@@ -1,2 +1,5 @@
 asyncua>=1.1
 PyYAML>=6.0
+aiohttp>=3.9
+bacpypes3>=0.0.100
+comtypes>=1.4 ; sys_platform == "win32"

@@ -14,7 +14,7 @@ modbus:
   - name: modbus1
     enabled: true
     host: 0.0.0.0
-    port: 5020                  # standard is 502
+    port: 1502                  # standard is 502
     update_interval_ms: 500
     word_order: big             # big = ABCD (high word first), little = CDAB
     tags:
@@ -57,3 +57,25 @@ mqtt:
     tags:
       - {name: Temp, count: 1000, data_type: float32, generator: random_walk, min: 20, max: 80, step: 0.5}
       - {name: Status, count: 100, data_type: bool, generator: square, period_s: 30}
+
+bacnet:
+  - name: bacnet1
+    enabled: true
+    ip_address: auto            # or e.g. 192.168.1.20/24 (prefix needed for broadcasts)
+    port: 47808                 # UDP; one device per port on a PC
+    device_instance: 1001
+    update_interval_ms: 1000
+    tags:
+      # object_type: analog-input | analog-value | binary-input | binary-value
+      - {name: AI, count: 50, object_type: analog-input, generator: sine, min: 0, max: 100, period_s: 120}
+      - {name: BV, count: 20, object_type: binary-value, generator: square, period_s: 60}
+
+opcda:
+  - name: opcda1
+    enabled: true
+    prog_id: BIDPS.OpcDaSimulator.1   # what OPC DA clients connect to
+    update_interval_ms: 1000
+    tags:
+      - {name: Random, count: 1000, data_type: float64, generator: random, min: 0, max: 100}
+      - {name: Ramp, count: 100, data_type: float32, generator: ramp, min: 0, max: 100, period_s: 60}
+      - {name: Running, count: 50, data_type: bool, generator: square, period_s: 30}

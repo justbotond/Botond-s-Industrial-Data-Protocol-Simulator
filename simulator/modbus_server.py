@@ -13,6 +13,7 @@ import sys
 from array import array
 from dataclasses import dataclass
 
+from .common import CycleStats
 from .tags import TagSet, TagSpec
 
 log = logging.getLogger("modbus")
@@ -39,11 +40,13 @@ class ModbusTagGroup:
 
 class ModbusSimServer:
     def __init__(self, name: str, host: str, port: int, update_interval_ms: int,
-                 tag_groups: list[dict], unit_id: int = 1, word_order: str = "big"):
+                 tag_groups: list[dict], word_order: str = "big"):
         self.name, self.host, self.port = name, host, port
         self.interval = update_interval_ms / 1000
-        self.unit_id = unit_id
         self.ready = asyncio.Event()
+        self.cycle = CycleStats(name, self.interval, log)
+        self.clients = 0
+        self.requests = 0
         self.word_swap = word_order == "little"
         self.regs = {"holding_registers": array("H", [0]) * AREA_SIZE,
                      "input_registers": array("H", [0]) * AREA_SIZE}
@@ -98,20 +101,14 @@ class ModbusSimServer:
         for g in self.groups:
             self._write_group(g)
 
-    async def _update_loop(self) -> None:
-        loop = asyncio.get_running_loop()
-        next_t = loop.time()
-        while True:
-            for g in self.groups:
-                g.tagset.tick()
-            self._write_all()
-            next_t += self.interval
-            delay = next_t - loop.time()
-            if delay < 0:
-                log.warning("%s: update took longer than interval (%.0f ms behind)", self.name, -delay * 1000)
-                next_t = loop.time()
-                delay = 0
-            await asyncio.sleep(delay)
+    async def _step(self) -> None:
+        for g in self.groups:
+            g.tagset.tick()
+        self._write_all()
+
+    def stats(self) -> dict:
+        return {**self.cycle.stats(), "clients": self.clients, "requests": self.requests,
+                "tags": sum(g.tagset.spec.count for g in self.groups)}
 
     # ---------- protocol ----------
     def _handle_pdu(self, pdu: bytes) -> bytes:
@@ -173,6 +170,7 @@ class ModbusSimServer:
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")
         log.info("%s: client connected %s", self.name, peer)
+        self.clients += 1
         try:
             while True:
                 header = await reader.readexactly(7)
@@ -181,12 +179,14 @@ class ModbusSimServer:
                 if pid != 0:
                     continue
                 resp = self._handle_pdu(pdu)
+                self.requests += 1
                 writer.write(struct.pack(">HHHB", tid, 0, len(resp) + 1, uid) + resp)
                 await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError):
             pass
         finally:
             log.info("%s: client disconnected %s", self.name, peer)
+            self.clients -= 1
             writer.close()
 
     def tag_map(self) -> list[dict]:
@@ -211,4 +211,4 @@ class ModbusSimServer:
                      g.tagset.spec.data_type, g.area, g.start, g.end - 1)
         self.ready.set()
         async with server:
-            await asyncio.gather(server.serve_forever(), self._update_loop())
+            await asyncio.gather(server.serve_forever(), self.cycle.run(self._step))

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from asyncua import Server, ua
 from asyncua.crypto.permission_rules import User, UserRole
 
+from .common import CycleStats
 from .tags import TagSet, TagSpec
 
 log = logging.getLogger("opcua")
@@ -35,6 +36,8 @@ class OpcUaSimServer:
         self.nodeids: list[list[ua.NodeId]] = []
         self.ns_idx = 0
         self.ready = asyncio.Event()
+        self.cycle = CycleStats(name, self.interval, log)
+        self.server: Server | None = None
 
     async def _build(self) -> Server:
         server = Server()
@@ -77,14 +80,14 @@ class OpcUaSimServer:
                 item.NodeAttributes = attrs
                 items.append(item)
                 ids.append(item.RequestedNewNodeId)
-            self._bulk_add(server, items)
+            await self._bulk_add(server, items)
             self.nodeids.append(ids)
         log.info("%s: created %d nodes in %.1f s", self.name, sum(len(i) for i in self.nodeids),
                  time.monotonic() - t0)
         return server
 
     @staticmethod
-    def _bulk_add(server: Server, items: list[ua.AddNodesItem]) -> None:
+    async def _bulk_add(server: Server, items: list[ua.AddNodesItem]) -> None:
         """Add many nodes in O(n).
 
         asyncua's AddNodes scans every existing reference of the parent for each new child,
@@ -94,7 +97,9 @@ class OpcUaSimServer:
         mgt = server.iserver.node_mgt_service
         aspace = server.iserver.aspace
         admin = User(role=UserRole.Admin)
-        for item in items:
+        for i, item in enumerate(items):
+            if i % 2000 == 0:
+                await asyncio.sleep(0)  # keep the process responsive (stats/logs) while building
             parent_id = item.ParentNodeId
             item.ParentNodeId = ua.NodeId()
             res = mgt._add_node(item, admin, check=False)
@@ -115,9 +120,8 @@ class OpcUaSimServer:
     async def _update_loop(self, server: Server) -> None:
         aspace = server.iserver.aspace
         attval_groups = [[aspace[nid].attributes[ua.AttributeIds.Value] for nid in ids] for ids in self.nodeids]
-        loop = asyncio.get_running_loop()
-        next_t = loop.time()
-        while True:
+
+        async def step() -> None:
             now = datetime.now(timezone.utc)
             for ts, attvals in zip(self.tagsets, attval_groups):
                 vtype = VARIANT_TYPE[ts.spec.data_type]
@@ -128,13 +132,16 @@ class OpcUaSimServer:
                     if attval.datachange_callbacks:  # only nodes a client has subscribed to
                         for k, cb in list(attval.datachange_callbacks.items()):
                             await cb(k, dv)
-            next_t += self.interval
-            delay = next_t - loop.time()
-            if delay < 0:
-                log.warning("%s: update took longer than interval (%.0f ms behind)", self.name, -delay * 1000)
-                next_t = loop.time()
-                delay = 0
-            await asyncio.sleep(delay)
+
+        await self.cycle.run(step)
+
+    def stats(self) -> dict:
+        s = {**self.cycle.stats(), "tags": sum(t.spec.count for t in self.tagsets),
+             "phase": "running" if self.ready.is_set() else "building address space"}
+        if self.server is not None and self.server.bserver is not None:
+            s["clients"] = len(self.server.bserver.clients)
+            s["subscriptions"] = len(self.server.iserver.subscription_service.subscriptions)
+        return s
 
     def tag_map(self) -> list[dict]:
         rows = []
@@ -148,7 +155,7 @@ class OpcUaSimServer:
         return rows
 
     async def run(self) -> None:
-        server = await self._build()
+        server = self.server = await self._build()
         async with server:
             self.ready.set()
             log.info("%s: OPC UA listening on opc.tcp://%s:%d/%s (%d tags, %d ms)", self.name, self.host,

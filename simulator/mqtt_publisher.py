@@ -7,7 +7,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from .mqtt_client import MqttError, MqttPublisher
+from .common import CycleStats
+from .mqtt_client import MqttClient, MqttError
 from .tags import TagSet, TagSpec
 
 log = logging.getLogger("mqtt")
@@ -37,6 +38,9 @@ class MqttSimPublisher:
         self.names = [ts.names() for ts in self.tagsets]
         self.ready = asyncio.Event()
         self.ready.set()
+        self.cycle = CycleStats(name, self.interval, log)
+        self.connected = False
+        self.sent = 0
 
     def _messages(self, ts_iso: str):
         for ts, names in zip(self.tagsets, self.names):
@@ -65,31 +69,33 @@ class MqttSimPublisher:
                              "data_type": ts.spec.data_type})
         return rows
 
+    def stats(self) -> dict:
+        return {**self.cycle.stats(), "tags": sum(ts.spec.count for ts in self.tagsets),
+                "connected": self.connected, "messages_sent": self.sent,
+                "broker": f"{self.broker_host}:{self.broker_port}"}
+
     async def run(self) -> None:
         total = sum(ts.spec.count for ts in self.tagsets)
         while True:
             try:
-                async with MqttPublisher(self.broker_host, self.broker_port, f"bidps-{self.name}",
-                                         self.username, self.password) as client:
+                async with MqttClient(self.broker_host, self.broker_port, f"bidps-{self.name}",
+                                      self.username, self.password) as client:
+                    self.connected = True
                     log.info("%s: publishing %d tags to %s:%d under '%s/#' every %d ms (%s)", self.name, total,
                              self.broker_host, self.broker_port, self.prefix, int(self.interval * 1000), self.mode)
-                    loop = asyncio.get_running_loop()
-                    next_t = loop.time()
-                    while True:
+
+                    async def step() -> None:
                         ts_iso = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
                         for k, (topic, payload) in enumerate(self._messages(ts_iso)):
                             client.publish_nowait(topic, payload, self.qos, self.retain)
+                            self.sent += 1
                             if k % 5000 == 4999:
                                 await client.flush()
                         await client.flush()
-                        next_t += self.interval
-                        delay = next_t - loop.time()
-                        if delay < 0:
-                            log.warning("%s: publishing took longer than interval (%.0f ms behind)",
-                                        self.name, -delay * 1000)
-                            next_t = loop.time()
-                            delay = 0
-                        await asyncio.sleep(delay)
+
+                    await self.cycle.run(step)
             except MqttError as e:
-                log.error("%s: broker connection lost (%s); retrying in 3 s", self.name, e)
+                self.connected = False
+                log.error("%s: broker %s:%d not reachable (%s); retrying in 3 s", self.name,
+                          self.broker_host, self.broker_port, e)
                 await asyncio.sleep(3)
